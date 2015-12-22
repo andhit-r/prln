@@ -28,6 +28,7 @@ class Parser(report_sxw.rml_parse):
 
     def __init__(self, cr, uid, name, context):
         super(Parser, self).__init__(cr, uid, name, context)
+        self.lst_company = []
         self.lst_lines = []
         self.lst_currency = []
         self.line_currency_ids = []
@@ -48,8 +49,53 @@ class Parser(report_sxw.rml_parse):
             'grand_total': self.get_report_grandtotal,
             'get_po_pr': self.get_po_pr,
             'get_list_currency': self.get_list_currency,
-            'get_lines': self.lines
+            'get_lines': self.lines,
+            'companies': self._get_companies,
         })
+
+    def set_context(self, objects, data, ids, report_type=None):
+        form = data['form']
+        # ctx = form.get('used_context', {})
+        self._company_query = ''
+        self._department_query = ''
+        self._date_from = form['po_date_from']
+        self._date_to = form['po_date_to']
+
+        if form['company_ids']:
+            str_company_ids = str(tuple(form['company_ids']))
+            self._company_query = 'AND company_id IN %s' % str_company_ids
+
+        if form['department_ids']:
+            str_department_ids = str(tuple(form['department_ids']))
+            self._department_query = 'AND department_id IN %s' % \
+                str_department_ids
+
+        return super(Parser, self).set_context(
+            objects, data, ids, report_type=report_type)
+
+    def _get_companies(self):
+        formater = (
+            self._date_from, self.date_to,
+            self._company_query, self._department_query,
+            )
+        str_query = """
+                    SELECT DISTINCT
+                        company_id
+                    FROM    pralon_purchasing_report AS A
+                    WHERE   a.date_approve >= '%s' AND
+                            a.date_approve <= '%s' %s %s
+                    """ % formater
+        self.cr.execute(str_query)
+        result = self.cr.fetchall()
+        company_ids = map(lambda x: x[0], result)
+        obj_company = self.pool.get('res.company')
+        for company in obj_company.browse(self.cr, self.uid, company_ids):
+            dict_data = {
+                'id': company.id,
+                'name': company.name,
+                }
+            self.lst_company.append(dict_data)
+        return self.lst_company
 
     def convert_date(self, date):
         convert_date = ''
